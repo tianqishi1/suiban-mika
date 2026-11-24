@@ -398,6 +398,8 @@ class AgentLoop(
             image = { tools.modelImage(it, null) }, seen = tools::noteUserScreen).also { screens = it }
         user.answerText = shots::asText
         val opening = shots.render(raw)
+        // 随办: 屏幕+回复顾问问句 → 第一轮不给工具,直接回答(见 AdvisorTurn)
+        val advisorOnce = opening != null && AdvisorTurn.isAdvisorWords(opening.words)
         val task = opening?.said ?: raw
         taskText = task
         latestWords = ownWords(raw, opening)
@@ -529,7 +531,7 @@ class AgentLoop(
         }
         // 第一次模型调用之前:有合适的路线就先照着做,不调模型;做完或对不上都交还模型
         // 路线只记、只放手机上的做法:点名用网页的任务不回放
-        if (flags.replay && replay != null && !task.trimStart().startsWith(WEB_CHANNEL_PREFIX)) {
+        if (flags.replay && replay != null && !advisorOnce && !task.trimStart().startsWith(WEB_CHANNEL_PREFIX)) {
             val reviewRoute = provenance.origin == RunOrigin.Ui && intentGate != null && routeMatcher?.candidates(task)?.isNotEmpty() == true
             if (reviewRoute) intent = assessIntent()
             if (!reviewRoute || intent == IntentGate.Intent.Read || intent == IntentGate.Intent.Act) {
@@ -545,7 +547,7 @@ class AgentLoop(
             refreshOffer()
             var asked = now()
             val routed = try {
-                routedOrRedirect(inbox, history, specs, track, step, { asked = it }, previewFor(step))
+                routedOrRedirect(inbox, history, if (advisorOnce && step == 1) emptyList() else specs, track, step, { asked = it }, previewFor(step))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
